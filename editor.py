@@ -1,24 +1,82 @@
+#MIT License
+
+#Copyright (c) 2025 Amirprx3
+
+#Permission is hereby granted, free of charge, to any person obtaining a copy
+#of this software and associated documentation files (the "Software"), to deal
+#in the Software without restriction, including without limitation the rights
+#to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#copies of the Software, and to permit persons to whom the Software is
+#furnished to do so, subject to the following conditions:
+
+#The above copyright notice and this permission notice shall be included in all
+#copies or substantial portions of the Software.
+
+#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#SOFTWARE.
+
+
 import os
+import sys
 import traceback
-from PyQt5.QtWidgets import (
-    QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction,
-    QFileDialog, QTabWidget, QSplitter, QDockWidget, QTreeView,
-    QFileSystemModel, QLabel, QPushButton, QHBoxLayout, QStatusBar, QMessageBox, QInputDialog
-)
-from PyQt5.QtGui import QFont, QColor, QIcon, QPalette, QPainter
-from PyQt5.QtCore import Qt, QDir, QTimer, QSettings, QModelIndex, QRect
+import jedi
+from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QVBoxLayout
+from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QPlainTextEdit
+from PyQt5.QtWidgets import QAction
+from PyQt5.QtWidgets import QTabWidget
+from PyQt5.QtWidgets import QSplitter
+from PyQt5.QtWidgets import QDockWidget
+from PyQt5.QtWidgets import QTreeView
+from PyQt5.QtWidgets import QFileSystemModel
+from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QCompleter
+
+from PyQt5.QtGui import QFont, QColor, QIcon, QPainter
+from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
 
 from terminal import Terminal
 from syntax_highlighter import PythonSyntaxHighlighter
 from line_number_area import LineNumberArea
 
 
+EDITOR_BACKGROUND    = "#1e1e1e"
+EDITOR_FOREGROUND    = "#d4d4d4"
+LINE_NUMBER_BG       = "#2d2d30"
+LINE_NUMBER_FG       = "#858585"
+FILE_EXPLORER_BG     = "#252526"
+FILE_EXPLORER_FG     = "#d4d4d4"
+COMPLETER_BG         = "black"
+COMPLETER_FG         = "white"
+
+
 class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFont(QFont("Fira Code", 12))
+
+        self.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND};")
         self.highlighter = PythonSyntaxHighlighter(self.document())
         self._setup_line_numbers()
+
+
+        self.completer = QCompleter()
+        self.completer.setWidget(self)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.activated.connect(self.insert_completion)
+        self.completer.setModel(QStringListModel())
+
+
+
+        self.completer.popup().setStyleSheet(f"background-color: {COMPLETER_BG}; color: {COMPLETER_FG};")
 
     def _setup_line_numbers(self):
         self.line_number_area = LineNumberArea(self)
@@ -38,7 +96,6 @@ class CodeEditor(QPlainTextEdit):
             self.line_number_area.scroll(0, dy)
         else:
             self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
-
         if rect.contains(self.viewport().rect()):
             self.updateLineNumberAreaWidth(0)
 
@@ -51,17 +108,15 @@ class CodeEditor(QPlainTextEdit):
 
     def lineNumberAreaPaintEvent(self, event):
         painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), Qt.lightGray)
-
+        painter.fillRect(event.rect(), QColor(LINE_NUMBER_BG))
         block = self.firstVisibleBlock()
         blockNumber = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
         bottom = top + self.blockBoundingRect(block).height()
-
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
-                painter.setPen(Qt.black)
+                painter.setPen(QColor(LINE_NUMBER_FG))
                 painter.drawText(
                     0,
                     int(top),
@@ -70,11 +125,63 @@ class CodeEditor(QPlainTextEdit):
                     Qt.AlignRight,
                     number
                 )
-
             block = block.next()
             top = bottom
             bottom = top + self.blockBoundingRect(block).height()
             blockNumber += 1
+
+    def insert_completion(self, completion):
+        cursor = self.textCursor()
+        extra = len(completion) - len(self.completer.completionPrefix())
+        if extra > 0:
+            cursor.insertText(completion[-extra:])
+        self.setTextCursor(cursor)
+
+    def textUnderCursor(self):
+        cursor = self.textCursor()
+        cursor.select(cursor.WordUnderCursor)
+        return cursor.selectedText()
+
+    def keyPressEvent(self, event):
+        if self.completer.popup().isVisible():
+            if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape, Qt.Key_Tab, Qt.Key_Backtab):
+                event.ignore()
+                return
+        super().keyPressEvent(event)
+        self.trigger_completion(event)
+
+    def trigger_completion(self, event):
+        if event.text() and (event.text().isalnum() or event.text() in ('_', '.')):
+            self.show_completion_suggestions()
+
+    def show_completion_suggestions(self):
+        cursor = self.textCursor()
+        pos = cursor.position()
+        block = cursor.block()
+        line = block.blockNumber() + 1
+        column = pos - block.position()
+        source = self.toPlainText()
+        try:
+            script = jedi.Script(source, path='')
+            completions = script.complete(line, column)
+            suggestions = [comp.name for comp in completions]
+            if suggestions:
+                model = QStringListModel()
+                model.setStringList(suggestions)
+                self.completer.setModel(model)
+                prefix = self.textUnderCursor()
+                self.completer.setCompletionPrefix(prefix)
+                cr = self.cursorRect()
+                cr.setWidth(
+                    self.completer.popup().sizeHintForColumn(0) +
+                    self.completer.popup().verticalScrollBar().sizeHint().width()
+                )
+                self.completer.complete(cr)
+            else:
+                self.completer.popup().hide()
+        except Exception as e:
+            print("Completion error:", e)
+            self.completer.popup().hide()
 
 
 class MainWindow(QMainWindow):
@@ -90,70 +197,69 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         main_splitter = QSplitter(Qt.Horizontal)
 
-        # File Explorer with toolbar
+
         self.file_explorer = QDockWidget("File Explorer", self)
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(QDir.rootPath())  # Use root path to ensure accessibility
-
+        self.file_model.setRootPath(QDir.rootPath())
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.file_model)
         self.tree_view.doubleClicked.connect(self.open_file)
-
+        self.tree_view.setStyleSheet(f"background-color: {FILE_EXPLORER_BG}; color: {FILE_EXPLORER_FG};")
+        self.tree_view.setStyleSheet("""
+            QHeaderView::section {
+                background-color: #252526;  /* Match FILE_EXPLORER_BG */
+                color: #d4d4d4;  /* Match FILE_EXPLORER_FG */
+                border: 1px solid #2d2d30;
+            }
+        """)
         container = QVBoxLayout()
         container.addWidget(self.tree_view)
-
         container_widget = QWidget()
         container_widget.setLayout(container)
         self.file_explorer.setWidget(container_widget)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.file_explorer)
 
-        # Editor and Terminal
+
         editor_terminal_splitter = QSplitter(Qt.Vertical)
         self.editor_tabs = QTabWidget()
+        self.editor_tabs.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
         self.editor_tabs.setTabsClosable(True)
         self.editor_tabs.tabCloseRequested.connect(self.close_tab)
         self.terminal = Terminal()
+        self.terminal.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
         editor_terminal_splitter.addWidget(self.editor_tabs)
         editor_terminal_splitter.addWidget(self.terminal)
-
         main_splitter.addWidget(editor_terminal_splitter)
         self.setCentralWidget(main_splitter)
 
     def _setup_actions(self):
         file_menu = self.menuBar().addMenu("&File")
-
-        # New File Action
         new_action = QAction(QIcon.fromTheme("document-new"), "New", self)
         new_action.setShortcut("Ctrl+N")
         new_action.triggered.connect(self.new_file)
         file_menu.addAction(new_action)
 
-        # Open File Action
         open_file_action = QAction(QIcon.fromTheme("document-open"), "Open File...", self)
         open_file_action.setShortcut("Ctrl+O")
         open_file_action.triggered.connect(self.open_file_dialog)
         file_menu.addAction(open_file_action)
 
-        # Open Folder Action
         open_folder_action = QAction("Open Folder...", self)
         open_folder_action.setShortcut("Ctrl+K Ctrl+O")
         open_folder_action.triggered.connect(self.open_folder_dialog)
         file_menu.addAction(open_folder_action)
 
-        # Save File Action
         save_action = QAction(QIcon.fromTheme("document-save"), "Save", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_file)
         file_menu.addAction(save_action)
 
-        # Run Menu
         run_menu = self.menuBar().addMenu("&Run")
         run_action = QAction("Run Code", self)
         run_action.setShortcut("F5")
         run_action.triggered.connect(self.run_code)
         run_menu.addAction(run_action)
 
-        # Terminal Menu
         terminal_menu = self.menuBar().addMenu("&Terminal")
         open_terminal_action = QAction("Open System Terminal", self)
         open_terminal_action.triggered.connect(self.open_system_terminal)
@@ -172,7 +278,9 @@ class MainWindow(QMainWindow):
         self.editor_tabs.setCurrentWidget(editor)
 
     def open_file_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "Python Files (*.py);;All Files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open File", "", "Python Files (*.py);;All Files (*)"
+        )
         if file_path:
             self.open_file(file_path)
 
@@ -180,7 +288,6 @@ class MainWindow(QMainWindow):
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder", QDir.currentPath())
         if folder_path:
             try:
-                print(f"Selected folder: {folder_path}")  # Add logging
                 if os.path.isdir(folder_path) and os.access(folder_path, os.R_OK):
                     self.file_model.setRootPath(folder_path)
                     self.tree_view.setRootIndex(self.file_model.index(folder_path))
@@ -188,124 +295,35 @@ class MainWindow(QMainWindow):
                 else:
                     QMessageBox.warning(self, "Error", f"The selected folder is not accessible: {folder_path}")
             except Exception as e:
-                error_message = traceback.format_exc()
-                print(f"Error opening folder: {error_message}")  # Add logging
+                print(traceback.format_exc())
                 QMessageBox.critical(self, "Critical Error", f"Failed to open folder: {e}")
+
     def open_file(self, path):
         if isinstance(path, QModelIndex):
             path = self.file_model.filePath(path)
-
-        if os.path.isfile(path) and os.access(path, os.R_OK):  # Check if the file is readable
-            try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as file:
-                    content = file.read()
-
-                editor = CodeEditor(self)
-                editor.setPlainText(content)
-                self.editor_tabs.addTab(editor, os.path.basename(path))
-                self.editor_tabs.setCurrentWidget(editor)
-                self.statusBar().showMessage(f"Opened file: {path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Critical Error", f"Failed to open file: {e}")
-        else:
-            QMessageBox.warning(self, "Warning", f"The selected file is not accessible: {path}")
-
-    def save_file(self):
-        current_editor = self.editor_tabs.currentWidget()
-        if current_editor:
-            file_path, _ = QFileDialog.getSaveFileName(self, "Save File")
-            if file_path:
-                with open(file_path, 'w') as file:
-                    file.write(current_editor.toPlainText())
-                self.editor_tabs.setTabText(self.editor_tabs.currentIndex(), os.path.basename(file_path))
-                self.statusBar().showMessage(f"Saved file: {file_path}")
-
-    def close_tab(self, index):
-        self.editor_tabs.removeTab(index)
-
-    def run_code(self):
-        current_editor = self.editor_tabs.currentWidget()
-        if current_editor:
-            code = current_editor.toPlainText()
-            with open("temp_code.py", "w") as file:
-                file.write(code)
-            self.terminal.run_command("python temp_code.py")
-
-    def open_system_terminal(self):
-        import os
-        os.system("start cmd")  # Open Windows Command Prompt
-
-    def create_file(self):
-        index = self.tree_view.currentIndex()
-        if not index.isValid():
-            return
-
-        path = self.file_model.filePath(index)
-        if os.path.isdir(path):
-            file_name, ok = QInputDialog.getText(self, "New File", "Enter file name:")
-            if ok and file_name:
-                file_path = os.path.join(path, file_name)
-                try:
-                    open(file_path, 'w').close()  # Create an empty file
-                    self.file_model.refresh()
-                except Exception as e:
-                    QMessageBox.warning(self, "Error", f"Failed to create file: {e}")
-
-    def create_folder(self):
-        index = self.tree_view.currentIndex()
-        if not index.isValid():
-            return
-
-        path = self.file_model.filePath(index)
-        if os.path.isdir(path):
-            folder_name, ok = QInputDialog.getText(self, "New Folder", "Enter folder name:")
-            if ok and folder_name:
-                folder_path = os.path.join(path, folder_name)
-                try:
-                    os.mkdir(folder_path)
-                    self.file_model.refresh()
-                except Exception as e:
-                    QMessageBox.warning(self, "Error", f"Failed to create folder: {e}")
-
-    def show_current_path(self):
-        index = self.tree_view.currentIndex()
-        if index.isValid():
-            path = self.file_model.filePath(index)
-            QMessageBox.information(self, "Current Path", f"Selected Path: {path}")
-
-    def open_file(self, index):
-        path = self.file_model.filePath(index)
-        if os.path.isfile(path):
-            with open(path, 'r') as file:
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as file:
                 content = file.read()
             editor = CodeEditor(self)
             editor.setPlainText(content)
             self.editor_tabs.addTab(editor, os.path.basename(path))
             self.editor_tabs.setCurrentWidget(editor)
-
-    def open_file_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "Python Files (*.py);;All Files (*)")
-        if file_path:
-            self.open_file(file_path)
-
-    def open_file(self, path):
-        if isinstance(path, QModelIndex):
-            path = self.file_model.filePath(path)
-        with open(path, 'r') as file:
-            content = file.read()
-        editor = CodeEditor(self)
-        editor.setPlainText(content)
-        self.editor_tabs.addTab(editor, os.path.basename(path))
-        self.editor_tabs.setCurrentWidget(editor)
+            self.statusBar().showMessage(f"Opened file: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Critical Error", f"Failed to open file: {e}")
 
     def save_file(self):
         current_editor = self.editor_tabs.currentWidget()
         if current_editor:
             file_path, _ = QFileDialog.getSaveFileName(self, "Save File")
             if file_path:
-                with open(file_path, 'w') as file:
-                    file.write(current_editor.toPlainText())
-                self.editor_tabs.setTabText(self.editor_tabs.currentIndex(), os.path.basename(file_path))
+                try:
+                    with open(file_path, 'w', encoding='utf-8') as file:
+                        file.write(current_editor.toPlainText())
+                    self.editor_tabs.setTabText(self.editor_tabs.currentIndex(), os.path.basename(file_path))
+                    self.statusBar().showMessage(f"Saved file: {file_path}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
 
     def close_tab(self, index):
         self.editor_tabs.removeTab(index)
@@ -313,7 +331,13 @@ class MainWindow(QMainWindow):
     def run_code(self):
         current_editor = self.editor_tabs.currentWidget()
         if current_editor:
-            code = current_editor.toPlainText()
-            with open("temp_code.py", "w") as file:
-                file.write(code)
-            self.terminal.run_command("python temp_code.py")
+            try:
+                code = current_editor.toPlainText()
+                with open("temp_code.py", "w", encoding='utf-8') as file:
+                    file.write(code)
+                self.terminal.run_command("python temp_code.py")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
+
+    def open_system_terminal(self):
+        os.system("start cmd")  
