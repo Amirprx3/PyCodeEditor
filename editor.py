@@ -207,8 +207,8 @@ class MainWindow(QMainWindow):
         self.tree_view.setStyleSheet(f"background-color: {FILE_EXPLORER_BG}; color: {FILE_EXPLORER_FG};")
         self.tree_view.setStyleSheet("""
             QHeaderView::section {
-                background-color: #252526;  /* Match FILE_EXPLORER_BG */
-                color: #d4d4d4;  /* Match FILE_EXPLORER_FG */
+                background-color: #252526;  
+                color: #d4d4d4;  
                 border: 1px solid #2d2d30;
             }
         """)
