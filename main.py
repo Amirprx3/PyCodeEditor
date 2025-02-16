@@ -1,5 +1,5 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QVBoxLayout, QMainWindow
+from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QVBoxLayout, QMainWindow, QPushButton
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 from editor import MainWindow as EditorMainWindow
@@ -10,16 +10,52 @@ class TitleBar(QWidget):
         super().__init__(parent)
         self.parent = parent
         self.setFixedHeight(30)
-
         self.setStyleSheet("background-color: #2d2d30; border: none;")
+        
+        # title label
         self.titleLabel = QLabel("Python IDE", self)
         self.titleLabel.setStyleSheet("color: #d4d4d4; font: bold 14px;")
+        
+        # add buttons
+        self.minimizeButton = QPushButton("_", self)  # minimize butten
+        self.minimizeButton.setFixedSize(30, 30)
+        self.minimizeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
+                                        "QPushButton:hover { background-color: #6a9955; }")
+        self.minimizeButton.clicked.connect(self.parent.showMinimized)
+        
+        self.maximizeButton = QPushButton("□", self)  # maximize butten
+        self.maximizeButton.setFixedSize(30, 30)
+        self.maximizeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
+                                        "QPushButton:hover { background-color: #4ec9b0; }")
+        self.maximizeButton.clicked.connect(self.toggle_maximize)
+        
+        self.closeButton = QPushButton("X", self)  # close button
+        self.closeButton.setFixedSize(30, 30)
+        self.closeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
+                                    "QPushButton:hover { background-color: #ce9178; }")
+        self.closeButton.clicked.connect(self.parent.close)
+        
+        # layout settigs
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setContentsMargins(10, 0, 0, 0)
         layout.addWidget(self.titleLabel)
         layout.addStretch()
+        layout.addWidget(self.minimizeButton)
+        layout.addWidget(self.maximizeButton)
+        layout.addWidget(self.closeButton)
         self.setLayout(layout)
+        
+        # Variable to manage zoom mode
+        self.isMaximized = False
         self.dragPos = None
+
+    def toggle_maximize(self):
+        if self.isMaximized:
+            self.parent.showNormal()
+            self.isMaximized = False
+        else:
+            self.parent.showMaximized()
+            self.isMaximized = True
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -35,11 +71,8 @@ class TitleBar(QWidget):
 class CustomMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-
         self.setWindowFlags(Qt.FramelessWindowHint)
-
         self.editorWindow = EditorMainWindow()
-
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
