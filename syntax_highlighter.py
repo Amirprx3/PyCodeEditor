@@ -1,3 +1,4 @@
+
 #MIT License
 
 #Copyright (c) 2025 Amirprx3
@@ -45,7 +46,7 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
             'and', 'as', 'assert', 'break', 'class', 'continue', 'del',
             'elif', 'else', 'except', 'False', 'finally', 'for', 'from', 'global',
             'if', 'import', 'in', 'is', 'lambda', 'None', 'nonlocal', 'not', 'or',
-            'pass', 'print', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield'
+            'pass', 'print', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield','self'
         ]
         self._rules.append((QRegularExpression(r'\b(%s)\b' % '|'.join(keywords)), 'keyword'))
         self._rules.append((QRegularExpression(r'"[^"\\]*(\\.[^"\\]*)*"'), 'string'))
