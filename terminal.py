@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit, QLineEdit
 from PyQt5.QtCore import QProcess, Qt, QSize
-
+from PyQt5.QtGui import QFont
 
 class Terminal(QWidget):
     def __init__(self):
@@ -12,12 +12,18 @@ class Terminal(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+        
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
+        self.output.setFont(QFont("Consolas", 12))  # Set Font & Size for terminal output
+
         self.input = QLineEdit()
         self.input.returnPressed.connect(self.execute_command)
+        self.input.setFont(QFont("Consolas", 12))  # Set Font & Size for terminal input
+
         layout.addWidget(self.output)
         layout.addWidget(self.input)
+
 
     def execute_command(self):
         command = self.input.text()

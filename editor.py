@@ -38,6 +38,8 @@ from PyQt5.QtWidgets import QFileSystemModel
 from PyQt5.QtWidgets import QFileDialog
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtWidgets import QCompleter
+from PyQt5.QtWidgets import QFontDialog
+
 
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter
 from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
@@ -45,6 +47,7 @@ from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
 from terminal import Terminal
 from syntax_highlighter import PythonSyntaxHighlighter
 from line_number_area import LineNumberArea
+from settings import Settings
 
 
 EDITOR_BACKGROUND    = "#1e1e1e"
@@ -66,16 +69,12 @@ class CodeEditor(QPlainTextEdit):
         self.highlighter = PythonSyntaxHighlighter(self.document())
         self._setup_line_numbers()
 
-
         self.completer = QCompleter()
         self.completer.setWidget(self)
         self.completer.setCompletionMode(QCompleter.PopupCompletion)
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.completer.activated.connect(self.insert_completion)
         self.completer.setModel(QStringListModel())
-
-
-
         self.completer.popup().setStyleSheet(f"background-color: {COMPLETER_BG}; color: {COMPLETER_FG};")
 
     def _setup_line_numbers(self):
@@ -113,6 +112,7 @@ class CodeEditor(QPlainTextEdit):
         blockNumber = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
         bottom = top + self.blockBoundingRect(block).height()
+
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
@@ -193,45 +193,33 @@ class MainWindow(QMainWindow):
         self._setup_actions()
         self._setup_file_explorer()
         self._setup_status_bar()
+        self.settings = Settings()
 
     def _setup_ui(self):
         main_splitter = QSplitter(Qt.Horizontal)
 
-
-        self.file_explorer = QDockWidget("File Explorer", self)
-        self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(QDir.rootPath())
-        self.tree_view = QTreeView()
-        self.tree_view.setModel(self.file_model)
-        self.tree_view.doubleClicked.connect(self.open_file)
-        self.tree_view.setStyleSheet(f"background-color: {FILE_EXPLORER_BG}; color: {FILE_EXPLORER_FG};")
-        self.tree_view.setStyleSheet("""
-            QHeaderView::section {
-                background-color: #252526;  
-                color: #d4d4d4;  
-                border: 1px solid #2d2d30;
-            }
-        """)
-        container = QVBoxLayout()
-        container.addWidget(self.tree_view)
-        container_widget = QWidget()
-        container_widget.setLayout(container)
-        self.file_explorer.setWidget(container_widget)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.file_explorer)
-
-
+        # Editor and Terminal Splitter
         editor_terminal_splitter = QSplitter(Qt.Vertical)
+
+        # Initialize editor_tabs
         self.editor_tabs = QTabWidget()
         self.editor_tabs.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
         self.editor_tabs.setTabsClosable(True)
         self.editor_tabs.tabCloseRequested.connect(self.close_tab)
+
+        # Apply settings to editors after initializing editor_tabs
+        for i in range(self.editor_tabs.count()):
+            editor = self.editor_tabs.widget(i)
+            if isinstance(editor, CodeEditor):
+                editor.setFont(self.settings.editor_font)
+
         self.terminal = Terminal()
         self.terminal.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
         editor_terminal_splitter.addWidget(self.editor_tabs)
         editor_terminal_splitter.addWidget(self.terminal)
         main_splitter.addWidget(editor_terminal_splitter)
         self.setCentralWidget(main_splitter)
-
+        
     def _setup_actions(self):
         file_menu = self.menuBar().addMenu("&File")
         new_action = QAction(QIcon.fromTheme("document-new"), "New", self)
@@ -265,15 +253,64 @@ class MainWindow(QMainWindow):
         open_terminal_action.triggered.connect(self.open_system_terminal)
         terminal_menu.addAction(open_terminal_action)
 
+        settings_menu = self.menuBar().addMenu(" &Settings")
+        # Font settings action
+        font_settings_action = QAction("Font Settings", self)
+        font_settings_action.triggered.connect(self.show_font_settings)
+        settings_menu.addAction(font_settings_action)
+
+    def show_font_settings(self):
+        # Check if there is an active editor tab
+        current_editor = self.editor_tabs.currentWidget()
+        if current_editor is None:
+            # Use default font if no tab is open
+            default_font = QFont("Fira Code", 12)
+            font, ok = QFontDialog.getFont(default_font, self, "Choose Font")
+        else:
+            # Use the font of the current editor if a tab is open
+            font, ok = QFontDialog.getFont(current_editor.font(), self, "Choose Font")
+
+        if ok:
+            # Apply the selected font to all open tabs
+            for i in range(self.editor_tabs.count()):
+                editor = self.editor_tabs.widget(i)
+                if isinstance(editor, CodeEditor):  # Ensure the widget is a CodeEditor
+                    editor.setFont(font)
+
+            # Save the selected font to settings
+            self.settings.editor_font = font
+            self.settings.save_settings()
+
     def _setup_file_explorer(self):
-        self.tree_view.setRootIndex(self.file_model.index(QDir.currentPath()))
-        self.tree_view.setColumnWidth(0, 250)
+        self.file_explorer = QDockWidget("File Explorer", self)
+        self.file_model = QFileSystemModel()
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(self.file_model)
+        self.tree_view.doubleClicked.connect(self.open_file)
+        self.tree_view.setStyleSheet(f"background-color: {FILE_EXPLORER_BG}; color: {FILE_EXPLORER_FG};")
+        self.tree_view.setStyleSheet("""
+            QHeaderView::section {
+                background-color: #252526;  
+                color: #d4d4d4;  
+                border: 1px solid #2d2d30; 
+            }
+        """)
+        container = QVBoxLayout()
+        container.addWidget(self.tree_view)
+        container_widget = QWidget()
+        container_widget.setLayout(container)
+        self.file_explorer.setWidget(container_widget)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.file_explorer)
+
+        # Initially set the root index to an invalid index (empty)
+        self.tree_view.setRootIndex(QModelIndex())
 
     def _setup_status_bar(self):
         self.statusBar().showMessage("Ready")
 
     def new_file(self):
         editor = CodeEditor(self)
+        editor.setFont(self.settings.editor_font)
         self.editor_tabs.addTab(editor, "Untitled.py")
         self.editor_tabs.setCurrentWidget(editor)
 
@@ -305,6 +342,7 @@ class MainWindow(QMainWindow):
             with open(path, 'r', encoding='utf-8', errors='ignore') as file:
                 content = file.read()
             editor = CodeEditor(self)
+            editor.setFont(self.settings.editor_font)
             editor.setPlainText(content)
             self.editor_tabs.addTab(editor, os.path.basename(path))
             self.editor_tabs.setCurrentWidget(editor)
