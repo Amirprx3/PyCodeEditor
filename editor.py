@@ -330,7 +330,9 @@ class MainWindow(QMainWindow):
         with open("Untitled.py", 'r', encoding='utf-8', errors='ignore') as file:
                 content = file.read()
         self.Current_FileName = "Untitled.py"
+        editor.setFont(self.settings.editor_font)
         editor.setPlainText(content)
+        
         self.editor_tabs.addTab(editor, os.path.basename('Untitled.py'))
         self.editor_tabs.setCurrentWidget(editor)
         
