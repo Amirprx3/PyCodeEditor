@@ -1,3 +1,4 @@
+
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QVBoxLayout, QMainWindow, QPushButton
 from PyQt5.QtGui import QFont, QColor, QPalette
@@ -101,6 +102,7 @@ if __name__ == "__main__":
     dark_palette.setColor(QPalette.Link, QColor("#2a82da"))
     dark_palette.setColor(QPalette.Highlight, QColor("#2a82da"))
     dark_palette.setColor(QPalette.HighlightedText, QColor("#1e1e1e"))
+    
     app.setPalette(dark_palette)
 
 
@@ -117,6 +119,43 @@ if __name__ == "__main__":
         QTabBar::tab:selected { background-color: #1e1e1e; border: 1px solid #2d2d30; }
         QTreeView { background-color: #252526; color: #d4d4d4; border: none; }
         QPlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; border: none; }
+        QFontDialog QPushButton {
+            background-color: #2d2d30;
+            color: #d4d4d4;
+            border: none;
+            font-size: 20px;
+            width : 100%;
+        }
+                      
+        QFontDialog QLineEdit {
+            background-color: #2d2d30;
+            color: #d4d4d4;
+            border: 1px solid #444;
+            padding: 5px;
+        }
+        
+        QFontDialog QPushButton:hover {
+            background-color: #4ec9b0;
+        }
+                      
+        QFontDialog QLabel {
+            color: #d4d4d4; 
+        }
+
+        QFontDialog QGroupBox {
+            background-color: #2d2d30; 
+            color: #d4d4d4; 
+            border-color : #2d2d30;
+        }
+        
+                      
+        QFontDialog QComboBox{
+            background-color: #2d2d30;
+            color: #d4d4d4;
+            border: none;
+            font-size: 12px;
+        }
+        
         /* Scroll bar styles for vertical and horizontal scroll bars */
         QScrollBar:vertical {
             background: #1e1e1e;

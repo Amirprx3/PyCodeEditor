@@ -7,7 +7,7 @@ class LineNumberArea(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
         self.codeEditor = editor
-        self.setFont(QFont("Consolas", 12))
+        self.setFont(QFont("Consolas", 10))
 
     def sizeHint(self):
         return QSize(self.codeEditor.lineNumberAreaWidth(), 0)
