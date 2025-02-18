@@ -40,7 +40,6 @@ from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtWidgets import QCompleter
 from PyQt5.QtWidgets import QFontDialog
 
-
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter
 from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
 
