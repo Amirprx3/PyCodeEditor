@@ -63,6 +63,7 @@ class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFont(QFont("Fira Code", 12))
+        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4) # indention 4 insted 8
 
         self.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND};")
         self.highlighter = PythonSyntaxHighlighter(self.document())
@@ -200,7 +201,6 @@ class MainWindow(QMainWindow):
         main_splitter = QSplitter(Qt.Horizontal)
         self.file_explorer = QDockWidget("File Explorer", self)
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(QDir.rootPath())
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.file_model)
         self.tree_view.doubleClicked.connect(self.open_file)
@@ -351,6 +351,9 @@ class MainWindow(QMainWindow):
                     self.file_model.setRootPath(folder_path)
                     self.tree_view.setRootIndex(self.file_model.index(folder_path))
                     self.statusBar().showMessage(f"Opened folder: {folder_path}")
+
+                    # set current path for folder
+                    os.chdir(folder_path)
                 else:
                     QMessageBox.warning(self, "Error", f"The selected folder is not accessible: {folder_path}")
             except Exception as e:
@@ -369,6 +372,10 @@ class MainWindow(QMainWindow):
             self.editor_tabs.addTab(editor, os.path.basename(path))
             self.editor_tabs.setCurrentWidget(editor)
             self.statusBar().showMessage(f"Opened file: {path}")
+
+            # set current path for file
+            os.chdir(os.path.dirname(path))
+            self.Current_FileName = path  # Save path for Run
         except Exception as e:
             QMessageBox.critical(self, "Critical Error", f"Failed to open file: {e}")
 
@@ -393,12 +400,12 @@ class MainWindow(QMainWindow):
         if current_editor:
             try:
                 code = current_editor.toPlainText()
-                Name = self.Current_FileName
+                Name = self.Current_FileName  # Using the opened file path
                 with open(Name, "w", encoding='utf-8') as file:
                     file.write(code)
-                self.terminal.run_command("python " + Name)
+                self.terminal.run_command(f"python {Name}")  # Run python file
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
 
     def open_system_terminal(self):
-        os.system("start cmd")  
+        os.system("start cmd")
