@@ -403,7 +403,7 @@ class MainWindow(QMainWindow):
                 Name = self.Current_FileName  # Using the opened file path
                 with open(Name, "w", encoding='utf-8') as file:
                     file.write(code)
-                self.terminal.run_command(f"python {Name}")  # Run python file
+                self.terminal.run_command(f"python {Name}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
 
