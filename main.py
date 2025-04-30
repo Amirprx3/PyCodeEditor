@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QVBoxLay
 from PyQt5.QtGui import QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 from editor import MainWindow as EditorMainWindow
-
+from settings import Settings
 
 class TitleBar(QWidget):
     def __init__(self, parent):
@@ -12,30 +12,27 @@ class TitleBar(QWidget):
         self.setFixedHeight(30)
         self.setStyleSheet("background-color: #2d2d30; border: none;")
         
-        # title label
         self.titleLabel = QLabel("Python IDE", self)
         self.titleLabel.setStyleSheet("color: #d4d4d4; font: bold 14px;")
         
-        # add buttons
-        self.minimizeButton = QPushButton("_", self)  # minimize butten
+        self.minimizeButton = QPushButton("_", self)
         self.minimizeButton.setFixedSize(30, 30)
         self.minimizeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
                                         "QPushButton:hover { background-color: #6a9955; }")
         self.minimizeButton.clicked.connect(self.parent.showMinimized)
         
-        self.maximizeButton = QPushButton("□", self)  # maximize butten
+        self.maximizeButton = QPushButton("□", self)
         self.maximizeButton.setFixedSize(30, 30)
         self.maximizeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
                                         "QPushButton:hover { background-color: #4ec9b0; }")
         self.maximizeButton.clicked.connect(self.toggle_maximize)
         
-        self.closeButton = QPushButton("X", self)  # close button
+        self.closeButton = QPushButton("X", self)
         self.closeButton.setFixedSize(30, 30)
         self.closeButton.setStyleSheet("QPushButton { background-color: #2d2d30; color: #d4d4d4; border: none; }"
                                     "QPushButton:hover { background-color: #ce9178; }")
         self.closeButton.clicked.connect(self.parent.close)
         
-        # layout settigs
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 0, 0)
         layout.addWidget(self.titleLabel)
@@ -45,7 +42,6 @@ class TitleBar(QWidget):
         layout.addWidget(self.closeButton)
         self.setLayout(layout)
         
-        # Variable to manage zoom mode
         self.isMaximized = False
         self.dragPos = None
 
@@ -67,7 +63,6 @@ class TitleBar(QWidget):
             self.dragPos = event.globalPos()
             event.accept()
 
-
 class CustomMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -86,84 +81,93 @@ class CustomMainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
+    # Dynamic palette based on theme
+    def apply_theme(theme):
+        palette = QPalette()
+        if theme == "dark":
+            palette.setColor(QPalette.Window, QColor("#1e1e1e"))
+            palette.setColor(QPalette.WindowText, QColor("#d4d4d4"))
+            palette.setColor(QPalette.Base, QColor("#252526"))
+            palette.setColor(QPalette.AlternateBase, QColor("#1e1e1e"))
+            palette.setColor(QPalette.ToolTipBase, QColor("#d4d4d4"))
+            palette.setColor(QPalette.ToolTipText, QColor("#d4d4d4"))
+            palette.setColor(QPalette.Text, QColor("#d4d4d4"))
+            palette.setColor(QPalette.Button, QColor("#2d2d30"))
+            palette.setColor(QPalette.ButtonText, QColor("#d4d4d4"))
+            palette.setColor(QPalette.BrightText, QColor("red"))
+            palette.setColor(QPalette.Link, QColor("#2a82da"))
+            palette.setColor(QPalette.Highlight, QColor("#2a82da"))
+            palette.setColor(QPalette.HighlightedText, QColor("#1e1e1e"))
+        else:  # light
+            palette.setColor(QPalette.Window, QColor("#ffffff"))
+            palette.setColor(QPalette.WindowText, QColor("#000000"))
+            palette.setColor(QPalette.Base, QColor("#f5f5f5"))
+            palette.setColor(QPalette.AlternateBase, QColor("#ffffff"))
+            palette.setColor(QPalette.ToolTipBase, QColor("#000000"))
+            palette.setColor(QPalette.ToolTipText, QColor("#000000"))
+            palette.setColor(QPalette.Text, QColor("#000000"))
+            palette.setColor(QPalette.Button, QColor("#e0e0e0"))
+            palette.setColor(QPalette.ButtonText, QColor("#000000"))
+            palette.setColor(QPalette.BrightText, QColor("red"))
+            palette.setColor(QPalette.Link, QColor("#0000ff"))
+            palette.setColor(QPalette.Highlight, QColor("#0078d7"))
+            palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+        app.setPalette(palette)
 
-    dark_palette = QPalette()
-    dark_palette.setColor(QPalette.Window, QColor("#1e1e1e"))
-    dark_palette.setColor(QPalette.WindowText, QColor("#d4d4d4"))
-    dark_palette.setColor(QPalette.Base, QColor("#252526"))
-    dark_palette.setColor(QPalette.AlternateBase, QColor("#1e1e1e"))
-    dark_palette.setColor(QPalette.ToolTipBase, QColor("#d4d4d4"))
-    dark_palette.setColor(QPalette.ToolTipText, QColor("#d4d4d4"))
-    dark_palette.setColor(QPalette.Text, QColor("#d4d4d4"))
-    dark_palette.setColor(QPalette.Button, QColor("#2d2d30"))
-    dark_palette.setColor(QPalette.ButtonText, QColor("#d4d4d4"))
-    dark_palette.setColor(QPalette.BrightText, QColor("red"))
-    dark_palette.setColor(QPalette.Link, QColor("#2a82da"))
-    dark_palette.setColor(QPalette.Highlight, QColor("#2a82da"))
-    dark_palette.setColor(QPalette.HighlightedText, QColor("#1e1e1e"))
-    
-    app.setPalette(dark_palette)
-
+    # Apply initial theme
+    settings = Settings()
+    apply_theme(settings.theme)
 
     app.setStyleSheet("""
-        QMainWindow { background-color: #1e1e1e; border: none; }
-        QMenuBar { background-color: #2d2d30; color: #d4d4d4; border: none; }
-        QMenuBar::item { background-color: #2d2d30; color: #d4d4d4; }
-        QMenuBar::item:selected { background-color: #2a82da; }
-        QStatusBar { background-color: #2d2d30; color: #d4d4d4; border: none; }
-        QDockWidget { background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #2d2d30; }
-        QDockWidget::title { background-color: #2d2d30; text-align: center; border: none; }
-        QTabWidget::pane { background-color: #1e1e1e; border: 1px solid #2d2d30; }
-        QTabBar::tab { background-color: #2d2d30; color: #d4d4d4; padding: 5px; border: 1px solid #2d2d30; }
-        QTabBar::tab:selected { background-color: #1e1e1e; border: 1px solid #2d2d30; }
-        QTreeView { background-color: #252526; color: #d4d4d4; border: none; }
-        QPlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; border: none; }
+        QMainWindow { border: none; }
+        QMenuBar { border: none; }
+        QMenuBar::item { padding: 5px; }
+        QMenuBar::item:selected { background-color: #0078d7; }
+        QStatusBar { border: none; }
+        QDockWidget { border: 1px solid #2d2d30; }
+        QDockWidget::title { text-align: center; border: none; }
+        QTabWidget::pane { border: 1px solid #2d2d30; }
+        QTabBar::tab { padding: 5px; border: 1px solid #2d2d30; }
+        QTabBar::tab:selected { border: 1px solid #2d2d30; }
+        QTreeView { border: none; }
+        QPlainTextEdit { border: none; }
         QFontDialog QPushButton {
-            background-color: #2d2d30;
-            color: #d4d4d4;
             border: none;
             font-size: 20px;
-            width : 100%;
+            width: 100%;
         }
-                      
         QFontDialog QLineEdit {
-            background-color: #2d2d30;
-            color: #d4d4d4;
             border: 1px solid #444;
             padding: 5px;
         }
-        
         QFontDialog QPushButton:hover {
             background-color: #4ec9b0;
         }
-                      
-        QFontDialog QLabel {
-            color: #d4d4d4; 
-        }
-
-        QFontDialog QGroupBox {
-            background-color: #2d2d30; 
-            color: #d4d4d4; 
-            border-color : #2d2d30;
-        }
-        
-                      
-        QFontDialog QComboBox{
-            background-color: #2d2d30;
-            color: #d4d4d4;
+        QFontDialog QLabel { }
+        QFontDialog QGroupBox { border-color: #2d2d30; }
+        QFontDialog QComboBox {
             border: none;
             font-size: 12px;
         }
-        
-        /* Scroll bar styles for vertical and horizontal scroll bars */
+        QComboBox {
+            border: 1px solid #2d2d30;
+            padding: 5px;
+        }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QComboBox::down-arrow {
+            image: none;
+        }
+        QComboBox QAbstractItemView {
+            selection-background-color: #0078d7;
+        }
         QScrollBar:vertical {
-            background: #1e1e1e;
             width: 12px;
             margin: 0px;
             border: 1px solid #2d2d30;
         }
         QScrollBar::handle:vertical {
-            background: #2d2d30;
             min-height: 20px;
             border-radius: 5px;
         }
@@ -174,13 +178,11 @@ if __name__ == "__main__":
             background: none;
         }
         QScrollBar:horizontal {
-            background: #1e1e1e;
             height: 12px;
             margin: 0px;
             border: 1px solid #2d2d30;
         }
         QScrollBar::handle:horizontal {
-            background: #2d2d30;
             min-width: 20px;
             border-radius: 5px;
         }

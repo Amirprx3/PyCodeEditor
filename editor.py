@@ -20,69 +20,56 @@
 #OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 #SOFTWARE.
 
-
 import os
 import sys
 import traceback
 import jedi
-from PyQt5.QtWidgets import QMainWindow
-from PyQt5.QtWidgets import QVBoxLayout
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtWidgets import QPlainTextEdit
-from PyQt5.QtWidgets import QAction
-from PyQt5.QtWidgets import QTabWidget
-from PyQt5.QtWidgets import QSplitter
-from PyQt5.QtWidgets import QDockWidget
-from PyQt5.QtWidgets import QTreeView
-from PyQt5.QtWidgets import QFileSystemModel
-from PyQt5.QtWidgets import QFileDialog
-from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtWidgets import QCompleter
-from PyQt5.QtWidgets import QFontDialog
-
-from PyQt5.QtGui import QFont, QColor, QIcon, QPainter
+import subprocess
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction, QTabWidget, QSplitter, QDockWidget, QTreeView, QFileSystemModel, QFileDialog, QMessageBox, QCompleter, QFontDialog, QMenu, QTextEdit, QLineEdit, QComboBox, QToolBar, QInputDialog
+from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QStandardItemModel, QStandardItem, QKeySequence
 from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
 
 from terminal import Terminal
 from syntax_highlighter import PythonSyntaxHighlighter
 from line_number_area import LineNumberArea
-from settings import Settings
-
-
-EDITOR_BACKGROUND    = "#1e1e1e"
-EDITOR_FOREGROUND    = "#d4d4d4"
-LINE_NUMBER_BG       = "#2d2d30"
-LINE_NUMBER_FG       = "#858585"
-FILE_EXPLORER_BG     = "#252526"
-FILE_EXPLORER_FG     = "#d4d4d4"
-COMPLETER_BG         = "black"
-COMPLETER_FG         = "white"
-
+from settings import Settings, THEMES
 
 class CodeEditor(QPlainTextEdit):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, theme="dark"):
         super().__init__(parent)
+        self.theme = theme
         self.setFont(QFont("Fira Code", 12))
-        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4) # indention 4 insted 8
+        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
 
-        self.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND};")
+        self.apply_theme()
         self.highlighter = PythonSyntaxHighlighter(self.document())
         self._setup_line_numbers()
             
-        self.updateLineNumberAreaWidth(0) 
-        self.completer = QCompleter()
-        self.completer.setWidget(self)
-        self.completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.completer.activated.connect(self.insert_completion)
-        self.completer.setModel(QStringListModel())
-        self.completer.popup().setStyleSheet(f"background-color: {COMPLETER_BG}; color: {COMPLETER_FG};")
+        try:
+            self.completer = QCompleter()
+            self.completer.setWidget(self)
+            self.completer.setCompletionMode(QCompleter.PopupCompletion)
+            self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+            self.completer.activated.connect(self.insert_completion)
+            self.completer.setModel(QStandardItemModel())
+            self.completer.popup().setStyleSheet(f"background-color: {THEMES[self.theme]['COMPLETER_BG']}; color: {THEMES[self.theme]['COMPLETER_FG']};")
+            print("Completer initialized successfully")
+        except Exception as e:
+            print(f"Error initializing completer: {e}")
+            raise
+        
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
 
     def _setup_line_numbers(self):
         self.line_number_area = LineNumberArea(self)
         self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
         self.updateRequest.connect(self.updateLineNumberArea)
-        
+
+    def apply_theme(self):
+        self.setStyleSheet(f"background-color: {THEMES[self.theme]['EDITOR_BACKGROUND']}; color: {THEMES[self.theme]['EDITOR_FOREGROUND']};")
+        if hasattr(self, 'completer'):
+            self.completer.popup().setStyleSheet(f"background-color: {THEMES[self.theme]['COMPLETER_BG']}; color: {THEMES[self.theme]['COMPLETER_FG']};")
 
     def lineNumberAreaWidth(self):
         digits = len(str(max(1, self.blockCount())))
@@ -109,7 +96,7 @@ class CodeEditor(QPlainTextEdit):
 
     def lineNumberAreaPaintEvent(self, event):
         painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), QColor(LINE_NUMBER_BG))
+        painter.fillRect(event.rect(), QColor(THEMES[self.theme]['LINE_NUMBER_BG']))
         block = self.firstVisibleBlock()
         blockNumber = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
@@ -118,7 +105,7 @@ class CodeEditor(QPlainTextEdit):
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
-                painter.setPen(QColor(LINE_NUMBER_FG))
+                painter.setPen(QColor(THEMES[self.theme]['LINE_NUMBER_FG']))
                 painter.drawText(
                     0,
                     int(top),
@@ -145,18 +132,28 @@ class CodeEditor(QPlainTextEdit):
         return cursor.selectedText()
 
     def keyPressEvent(self, event):
-        if self.completer.popup().isVisible():
+        if hasattr(self, 'completer') and self.completer.popup().isVisible():
             if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape, Qt.Key_Tab, Qt.Key_Backtab):
                 event.ignore()
                 return
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Space:
+            print("Ctrl+Space pressed, triggering completion")
+            self.show_completion_suggestions()
+            event.accept()
+            return
         super().keyPressEvent(event)
         self.trigger_completion(event)
 
     def trigger_completion(self, event):
         if event.text() and (event.text().isalnum() or event.text() in ('_', '.')):
+            print("Triggering completion for text:", event.text())
             self.show_completion_suggestions()
 
     def show_completion_suggestions(self):
+        if not hasattr(self, 'completer'):
+            print("Completer not defined, skipping completion")
+            return
+        
         cursor = self.textCursor()
         pos = cursor.position()
         block = cursor.block()
@@ -164,38 +161,63 @@ class CodeEditor(QPlainTextEdit):
         column = pos - block.position()
         source = self.toPlainText()
         try:
-            script = jedi.Script(source, path='')
-            completions = script.complete(line, column)
-            suggestions = [comp.name for comp in completions]
-            if suggestions:
-                model = QStringListModel()
-                model.setStringList(suggestions)
-                self.completer.setModel(model)
-                prefix = self.textUnderCursor()
-                self.completer.setCompletionPrefix(prefix)
-                cr = self.cursorRect()
-                cr.setWidth(
-                    self.completer.popup().sizeHintForColumn(0) +
-                    self.completer.popup().verticalScrollBar().sizeHint().width()
-                )
-                self.completer.complete(cr)
-            else:
-                self.completer.popup().hide()
+            block_text = block.text().strip()
+            if block_text.startswith('import ') or block_text.startswith('from '):
+                if ' as ' in block_text:
+                    cursor_word = self.textUnderCursor()
+                    if cursor_word in ('as',):
+                        print("Skipping completion after 'as' in import")
+                        self.completer.popup().hide()
+                        return
+            
+            script = jedi.Script(source, path=self.parentWidget().Current_FileName if hasattr(self.parentWidget(), 'Current_FileName') else '')
+            completions = script.complete(line, column, fuzzy=True)
+            model = QStandardItemModel()
+            for comp in completions:
+                item = QStandardItem(comp.name)
+                item.setData(f"{comp.type}: {comp.description}", Qt.ToolTipRole)
+                model.appendRow(item)
+            self.completer.setModel(model)
+            prefix = self.textUnderCursor()
+            self.completer.setCompletionPrefix(prefix)
+            cr = self.cursorRect()
+            cr.setWidth(
+                self.completer.popup().sizeHintForColumn(0) +
+                self.completer.popup().verticalScrollBar().sizeHint().width()
+            )
+            print(f"Showing completions for prefix: {prefix}")
+            self.completer.complete(cr)
         except Exception as e:
             print("Completion error:", e)
             self.completer.popup().hide()
 
+    def show_context_menu(self, pos):
+        menu = QMenu(self)
+        if self.textCursor().hasSelection():
+            ai_action = QAction("AI", self)
+            ai_action.triggered.connect(self.open_ai_panel)
+            menu.addAction(ai_action)
+        menu.exec_(self.mapToGlobal(pos))
+
+    def open_ai_panel(self):
+        main_window = self.parentWidget()
+        while main_window and not isinstance(main_window, MainWindow):
+            main_window = main_window.parentWidget()
+        if main_window:
+            main_window.show_ai_panel(self.textCursor().selectedText())
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Python IDE")
         self.setGeometry(100, 100, 1280, 720)
+        self.settings = Settings()
         self._setup_ui()
         self._setup_actions()
         self._setup_file_explorer()
         self._setup_status_bar()
-        self.settings = Settings()
+        self.ai_dock = None
+        self.terminal_visible = True
 
     def _setup_ui(self):
         main_splitter = QSplitter(Qt.Horizontal)
@@ -204,43 +226,98 @@ class MainWindow(QMainWindow):
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.file_model)
         self.tree_view.doubleClicked.connect(self.open_file)
-        self.tree_view.setStyleSheet(f"background-color: {FILE_EXPLORER_BG}; color: {FILE_EXPLORER_FG};")
-        self.tree_view.setStyleSheet("""
-            QHeaderView::section {
-                background-color: #252526;  
-                color: #d4d4d4;  
-                border: 1px solid #2d2d30;
-            }
-        """)
+        self.apply_theme_to_file_explorer()
         container = QVBoxLayout()
         container.addWidget(self.tree_view)
         container_widget = QWidget()
         container_widget.setLayout(container)
         self.file_explorer.setWidget(container_widget)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.file_explorer)
-        # Editor and Terminal Splitter
-        editor_terminal_splitter = QSplitter(Qt.Vertical)
-        
 
-        # Initialize editor_tabs
+        editor_terminal_splitter = QSplitter(Qt.Vertical)
         self.editor_tabs = QTabWidget()
-        self.editor_tabs.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
+        self.apply_theme_to_tabs()
         self.editor_tabs.setTabsClosable(True)
         self.editor_tabs.tabCloseRequested.connect(self.close_tab)
 
-        # Apply settings to editors after initializing editor_tabs
         for i in range(self.editor_tabs.count()):
             editor = self.editor_tabs.widget(i)
             if isinstance(editor, CodeEditor):
                 editor.setFont(self.settings.editor_font)
+                editor.theme = self.settings.theme
+                editor.apply_theme()
 
-        self.terminal = Terminal()
-        self.terminal.setStyleSheet(f"background-color: {EDITOR_BACKGROUND}; color: {EDITOR_FOREGROUND}; border: 1px solid #2d2d30;")
+        self.terminal = Terminal(theme=self.settings.theme)
         editor_terminal_splitter.addWidget(self.editor_tabs)
         editor_terminal_splitter.addWidget(self.terminal)
         main_splitter.addWidget(editor_terminal_splitter)
         self.setCentralWidget(main_splitter)
+
+        self.toolbar = QToolBar("Interpreter")
+        self.addToolBar(Qt.TopToolBarArea, self.toolbar)
+        self.interpreter_combo = QComboBox()
+        self.interpreter_combo.setStyleSheet(f"background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']}; color: {THEMES[self.settings.theme]['AI_PANEL_FG']}; border: 1px solid #2d2d30; padding: 5px;")
+        self.interpreter_combo.addItem(self.settings.python_interpreter)
+        self.interpreter_combo.currentTextChanged.connect(self.change_interpreter)
+        self.toolbar.addWidget(self.interpreter_combo)
+        self._populate_interpreters()
+
+    def keyPressEvent(self, event):
+        if event == QKeySequence("Ctrl+`"):
+            self.toggle_terminal()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def toggle_terminal(self):
+        if self.terminal_visible:
+            self.terminal.hide()
+            self.terminal_visible = False
+            self.statusBar().showMessage("Terminal hidden")
+        else:
+            self.terminal.show()
+            self.terminal_visible = True
+            self.statusBar().showMessage("Terminal shown")
+
+    def apply_theme_to_file_explorer(self):
+        self.tree_view.setStyleSheet(f"background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']}; color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};")
+        self.tree_view.setStyleSheet(f"""
+            QTreeView {{ background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']}; color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']}; }}
+            QHeaderView::section {{
+                background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']};  
+                color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};  
+                border: 1px solid #2d2d30;
+            }}
+        """)
+
+    def apply_theme_to_tabs(self):
+        self.editor_tabs.setStyleSheet(f"background-color: {THEMES[self.settings.theme]['EDITOR_BACKGROUND']}; color: {THEMES[self.settings.theme]['EDITOR_FOREGROUND']}; border: 1px solid #2d2d30;")
+
+    def _populate_interpreters(self):
+        interpreters = ["python"]
+        try:
+            result = subprocess.run(["where", "python"], capture_output=True, text=True)
+            for path in result.stdout.splitlines():
+                if "python" in path.lower():
+                    interpreters.append(path.strip())
+            result = subprocess.run(["where", "python3"], capture_output=True, text=True)
+            for path in result.stdout.splitlines():
+                if "python3" in path.lower():
+                    interpreters.append(path.strip())
+        except Exception as e:
+            print("Error finding interpreters:", e)
         
+        interpreters = list(dict.fromkeys(interpreters))
+        self.interpreter_combo.clear()
+        self.interpreter_combo.addItems(interpreters)
+        if self.settings.python_interpreter in interpreters:
+            self.interpreter_combo.setCurrentText(self.settings.python_interpreter)
+
+    def change_interpreter(self, interpreter):
+        self.settings.python_interpreter = interpreter
+        self.settings.save_settings()
+        self.statusBar().showMessage(f"Python interpreter set to: {interpreter}")
+
     def _setup_actions(self):
         file_menu = self.menuBar().addMenu("&File")
         new_action = QAction(QIcon.fromTheme("document-new"), "New", self)
@@ -274,67 +351,92 @@ class MainWindow(QMainWindow):
         open_terminal_action.triggered.connect(self.open_system_terminal)
         terminal_menu.addAction(open_terminal_action)
 
+        toggle_terminal_action = QAction("Toggle Terminal", self)
+        toggle_terminal_action.setShortcut("Ctrl+`")
+        toggle_terminal_action.triggered.connect(self.toggle_terminal)
+        terminal_menu.addAction(toggle_terminal_action)
+
         settings_menu = self.menuBar().addMenu(" &Settings")
-        # Font settings action
         font_settings_action = QAction("Font Settings", self)
         font_settings_action.triggered.connect(self.show_font_settings)
-    
-        
-        
         settings_menu.addAction(font_settings_action)
 
+        theme_settings_action = QAction("Theme Settings", self)
+        theme_settings_action.triggered.connect(self.show_theme_settings)
+        settings_menu.addAction(theme_settings_action)
+
     def show_font_settings(self):
-        # Check if there is an active editor tab
         current_editor = self.editor_tabs.currentWidget()
         if current_editor is None:
-            # Use default font if no tab is open
             default_font = QFont("Fira Code", 12)
-            font, ok = QFontDialog.getFont(default_font, self, "Choose bs")
-            
+            font, ok = QFontDialog.getFont(default_font, self, "Choose Font")
         else:
-            # Use the font of the current editor if a tab is open
             font, ok = QFontDialog.getFont(current_editor.font(), self, "Choose Font", QFontDialog.DontUseNativeDialog)
 
         if ok:
-            # Apply the selected font to all open tabs
             for i in range(self.editor_tabs.count()):
                 editor = self.editor_tabs.widget(i)
-                if isinstance(editor, CodeEditor):  # Ensure the widget is a CodeEditor
+                if isinstance(editor, CodeEditor):
                     editor.setFont(font)
-
-            # Save the selected font to settings
             self.settings.editor_font = font
             self.settings.save_settings()
+
+    def show_theme_settings(self):
+        theme, ok = QInputDialog.getItem(self, "Choose Theme", "Select a theme:", ["dark", "light"], 0, False)
+        if ok:
+            self.settings.theme = theme
+            self.settings.save_settings()
+            self.apply_theme_to_file_explorer()
+            self.apply_theme_to_tabs()
+            for i in range(self.editor_tabs.count()):
+                editor = self.editor_tabs.widget(i)
+                if isinstance(editor, CodeEditor):
+                    editor.theme = theme
+                    editor.apply_theme()
+            self.terminal.theme = theme
+            self.terminal.apply_theme()
+            self.interpreter_combo.setStyleSheet(f"background-color: {THEMES[theme]['AI_PANEL_BG']}; color: {THEMES[theme]['AI_PANEL_FG']}; border: 1px solid #2d2d30; padding: 5px;")
+            if self.ai_dock:
+                ai_prompt = self.ai_dock.widget().layout().itemAt(0).widget()
+                ai_text = self.ai_dock.widget().layout().itemAt(1).widget()
+                ai_prompt.setStyleSheet(f"""
+                    background-color: {THEMES[theme]['AI_PANEL_BG']};
+                    color: {THEMES[theme]['AI_PANEL_FG']};
+                    border: 1px solid #2d2d30;
+                    padding: 5px;
+                """)
+                ai_text.setStyleSheet(f"""
+                    background-color: {THEMES[theme]['AI_PANEL_BG']};
+                    color: {THEMES[theme]['AI_PANEL_FG']};
+                    border: 1px solid #2d2d30;
+                """)
+            self.statusBar().showMessage(f"Theme changed to: {theme}")
 
     def _setup_file_explorer(self):
         self.tree_view.setRootIndex(self.file_model.index(QDir.currentPath()))
         self.tree_view.setColumnWidth(0, 250)
-
-
+        self.terminal.change_directory(QDir.currentPath())
 
     def _setup_status_bar(self):
         self.statusBar().showMessage("Ready")
 
     def new_file(self):
-        
-
-        
         try:     
             with open("Untitled.py", "w", encoding='utf-8') as file:
-                    file.write("#WRITE YOUR COPY RIGHT HERE")
+                file.write("#WRITE YOUR COPY RIGHT HERE")
         except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
         
-        editor = CodeEditor(self)
+        editor = CodeEditor(self, theme=self.settings.theme)
         with open("Untitled.py", 'r', encoding='utf-8', errors='ignore') as file:
-                content = file.read()
+            content = file.read()
         self.Current_FileName = "Untitled.py"
         editor.setFont(self.settings.editor_font)
         editor.setPlainText(content)
         
         self.editor_tabs.addTab(editor, os.path.basename('Untitled.py'))
         self.editor_tabs.setCurrentWidget(editor)
-        
+        self.terminal.change_directory(os.getcwd())
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -351,9 +453,8 @@ class MainWindow(QMainWindow):
                     self.file_model.setRootPath(folder_path)
                     self.tree_view.setRootIndex(self.file_model.index(folder_path))
                     self.statusBar().showMessage(f"Opened folder: {folder_path}")
-
-                    # set current path for folder
                     os.chdir(folder_path)
+                    self.terminal.change_directory(folder_path)
                 else:
                     QMessageBox.warning(self, "Error", f"The selected folder is not accessible: {folder_path}")
             except Exception as e:
@@ -366,17 +467,18 @@ class MainWindow(QMainWindow):
         try:
             with open(path, 'r', encoding='utf-8', errors='ignore') as file:
                 content = file.read()
-            editor = CodeEditor(self)
+            editor = CodeEditor(self, theme=self.settings.theme)
             editor.setFont(self.settings.editor_font)
             editor.setPlainText(content)
             self.editor_tabs.addTab(editor, os.path.basename(path))
             self.editor_tabs.setCurrentWidget(editor)
             self.statusBar().showMessage(f"Opened file: {path}")
-
-            # set current path for file
             os.chdir(os.path.dirname(path))
-            self.Current_FileName = path  # Save path for Run
+            self.terminal.change_directory(os.path.dirname(path))
+            self.Current_FileName = path
+            print(f"Opened file: {path}, completer exists: {hasattr(editor, 'completer')}")
         except Exception as e:
+            print(f"Error opening file: {e}")
             QMessageBox.critical(self, "Critical Error", f"Failed to open file: {e}")
 
     def save_file(self):
@@ -389,6 +491,8 @@ class MainWindow(QMainWindow):
                         file.write(current_editor.toPlainText())
                     self.editor_tabs.setTabText(self.editor_tabs.currentIndex(), os.path.basename(file_path))
                     self.statusBar().showMessage(f"Saved file: {file_path}")
+                    os.chdir(os.path.dirname(file_path))
+                    self.terminal.change_directory(os.path.dirname(file_path))
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
 
@@ -400,12 +504,59 @@ class MainWindow(QMainWindow):
         if current_editor:
             try:
                 code = current_editor.toPlainText()
-                Name = self.Current_FileName  # Using the opened file path
+                Name = self.Current_FileName
                 with open(Name, "w", encoding='utf-8') as file:
                     file.write(code)
-                self.terminal.run_command(f"python {Name}")
+                interpreter = self.settings.python_interpreter
+                self.terminal.run_command(f'"{interpreter}" "{Name}"')
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to run code: {e}")
 
     def open_system_terminal(self):
         os.system("start cmd")
+
+    def show_ai_panel(self, selected_text):
+        if self.ai_dock is None:
+            self.ai_dock = QDockWidget("AI Assistant", self)
+            ai_widget = QWidget()
+            ai_layout = QVBoxLayout()
+            
+            ai_prompt = QLineEdit()
+            ai_prompt.setPlaceholderText("Enter your AI prompt here...")
+            ai_prompt.setFont(QFont("Fira Code", 14))
+            ai_prompt.setStyleSheet(f"""
+                background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
+                color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
+                border: 1px solid #2d2d30;
+                padding: 5px;
+            """)
+            
+            ai_text = QTextEdit()
+            ai_text.setReadOnly(True)
+            ai_text.setFont(QFont("Fira Code", 14))
+            ai_text.setStyleSheet(f"""
+                background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
+                color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
+                border: 1px solid #2d2d30;
+            """)
+            ai_text.setText(f"Selected text:\n{selected_text}\n\nWaiting for your prompt...")
+            
+            def submit_prompt():
+                prompt = ai_prompt.text()
+                if prompt:
+                    ai_text.setText(f"Selected text:\n{selected_text}\n\nPrompt:\n{prompt}\n\nAI response will appear here...")
+                    ai_prompt.clear()
+                    self.statusBar().showMessage("Prompt submitted")
+            
+            ai_prompt.returnPressed.connect(submit_prompt)
+            
+            ai_layout.addWidget(ai_prompt)
+            ai_layout.addWidget(ai_text)
+            ai_widget.setLayout(ai_layout)
+            self.ai_dock.setWidget(ai_widget)
+            self.addDockWidget(Qt.RightDockWidgetArea, self.ai_dock)
+        else:
+            ai_text = self.ai_dock.widget().layout().itemAt(1).widget()
+            ai_text.setText(f"Selected text:\n{selected_text}\n\nWaiting for your prompt...")
+            self.ai_dock.show()
+        self.statusBar().showMessage("AI panel opened")
