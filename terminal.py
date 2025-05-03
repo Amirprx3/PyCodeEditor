@@ -59,13 +59,13 @@ class Terminal(QWidget):
         # Terminal output
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
-        self.output.setFont(QFont("Fira Code", 12))
+        self.output.setFont(QFont("Fira Code", 8))
         self.apply_theme()
         layout.addWidget(self.output)
 
         # Command input
         self.input = QLineEdit()
-        self.input.setFont(QFont("Fira Code", 12))
+        self.input.setFont(QFont("Fira Code", 8))
         self.input.returnPressed.connect(self.execute_command)
         self.input.setStyleSheet(f"""
             background-color: {THEMES[self.theme]['TERMINAL_BG']};

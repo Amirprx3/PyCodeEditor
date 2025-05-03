@@ -23,16 +23,30 @@
 import os
 import sys
 import traceback
+import re
 import jedi
+import requests
+import time
+import html
+from pygments import highlight
+from pygments.lexers.python import PythonLexer
+from pygments.formatters.html import HtmlFormatter
 import subprocess
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction, QTabWidget, QSplitter, QDockWidget, QTreeView, QFileSystemModel, QFileDialog, QMessageBox, QCompleter, QFontDialog, QMenu, QTextEdit, QLineEdit, QComboBox, QToolBar, QInputDialog
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QStandardItemModel, QStandardItem, QKeySequence
 from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
-
+from pygments import highlight
+from pygments.lexers.python import PythonLexer
+from pygments.formatters.html import HtmlFormatter
+from pygments.styles.monokai import MonokaiStyle
+from pygments.token import Comment,Name,Keyword, Token
 from terminal import Terminal
 from syntax_highlighter import PythonSyntaxHighlighter
 from line_number_area import LineNumberArea
 from settings import Settings, THEMES
+
+
+
 
 class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None, theme="dark"):
@@ -193,8 +207,23 @@ class CodeEditor(QPlainTextEdit):
 
     def show_context_menu(self, pos):
         menu = QMenu(self)
+        menu.setStyleSheet("""
+        QMenu {
+            background-color: #2d2d30;
+            color: #d4d4d4;
+            border: 1px solid #444;
+        }
+        QMenu::item {
+            padding: 5px 20px;
+            background-color: transparent;
+        }
+        QMenu::item:selected {
+            background-color: #4ec9b0;  /* your hover color */
+            color: black;
+        }
+        """)
         if self.textCursor().hasSelection():
-            ai_action = QAction("AI", self)
+            ai_action = QAction("Ask AI", self)
             ai_action.triggered.connect(self.open_ai_panel)
             menu.addAction(ai_action)
         menu.exec_(self.mapToGlobal(pos))
@@ -516,47 +545,211 @@ class MainWindow(QMainWindow):
         os.system("start cmd")
 
     def show_ai_panel(self, selected_text):
+        code_block_css = (
+            "background-color: #1e1e1e;"
+            f"color: {THEMES[self.settings.theme]['AI_PANEL_FG']};"
+            "white-space: pre-wrap;"
+            "word-wrap: break-word;"
+            "padding: 4px;"
+            "border-radius: 3px;"
+            "margin: 0;"
+            "border: none;"
+            "display: block;"
+        )
+
+        def build_html(prompt=None, result=None):
+            highlighted_selected_text = pygments_highlight(selected_text, code_block_css)
+
+            base_style = (
+                "font-family: 'Fira Code'; font-size: 8pt; "
+                f"background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};"
+                f"color: {THEMES[self.settings.theme]['AI_PANEL_FG']};"
+                "padding: 5px;"
+            )
+
+            parts = [
+                f"<div style=\"{base_style}\">",
+                "  <span style=\"color: cyan; font-weight: bold;\">[SELECTED TEXT]:</span><br>",
+                highlighted_selected_text
+            ]
+
+            if prompt is None:
+                parts += [
+                    "  <br>",
+                    "  <span>Enter your prompt:</span>"
+                ]
+            else:
+                esc_prompt = html.escape(prompt)
+                esc_prompt = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', esc_prompt)  # Apply bold formatting
+                # Prompt Section
+                parts += [
+                    "  <br>",
+                    f"  <div style=\"padding: 4px; border-radius: 3px; background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']}; color: {THEMES[self.settings.theme]['AI_PANEL_FG']};\">",
+                    "    <span style=\"color: #ce9178; font-weight: bold;\">[YOUR PROMPT]:</span><br>",
+                    f"    <div style=\"white-space: pre-wrap; word-wrap: break-word; margin-top: 4px;\">{esc_prompt}</div>",
+                    "  </div>",
+                    "  <br>"
+                ]
+                # AI Section (single)
+                raw_result = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', str(result))  # Apply bold formatting to result
+                processed_res = process_codeenv(raw_result, code_block_css)
+                parts += [
+                    f"  <div style=\"padding: 4px; border-radius: 3px; background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']}; color: {THEMES[self.settings.theme]['AI_PANEL_FG']};\">",
+                    "    <span style=\"color: #4ec9b0; font-weight: bold;\">[AI]:</span><br>",
+                    f"    <div style=\"white-space: pre-wrap; word-wrap: break-word; margin-top: 4px;\">{processed_res}</div>",
+                    "  </div>"
+                ]
+
+            parts.append("</div>")
+            return "\n".join(parts)
+
         if self.ai_dock is None:
-            self.ai_dock = QDockWidget("AI Assistant", self)
-            ai_widget = QWidget()
-            ai_layout = QVBoxLayout()
-            
+            self.ai_dock = QDockWidget("AI Assistant", self.window())
+            self.ai_dock.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
+            ai_widget   = QWidget()
+            ai_layout   = QVBoxLayout(ai_widget)
+            ai_layout.setContentsMargins(0, 0, 0, 0)
+            ai_layout.setSpacing(5)
+
             ai_prompt = QLineEdit()
-            ai_prompt.setPlaceholderText("Enter your AI prompt here...")
-            ai_prompt.setFont(QFont("Fira Code", 14))
+            ai_prompt.setPlaceholderText("Enter your AI prompt here…")
+            ai_prompt.setFont(QFont("Fira Code", 8))
             ai_prompt.setStyleSheet(f"""
-                background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
-                color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
-                border: 1px solid #2d2d30;
-                padding: 5px;
+                QLineEdit {{
+                    background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
+                    color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
+                    border: 1px solid #2d2d30;
+                    padding: 5px;
+                }}
+                QLineEdit:focus {{
+                    border: 1px solid #007acc;
+                }}
             """)
-            
+
             ai_text = QTextEdit()
             ai_text.setReadOnly(True)
-            ai_text.setFont(QFont("Fira Code", 14))
+            ai_text.setFont(QFont("Fira Code", 8))
+            ai_text.setAcceptRichText(True)
+            ai_text.setContentsMargins(0,0,0,0)
+
             ai_text.setStyleSheet(f"""
-                background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
-                color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
-                border: 1px solid #2d2d30;
+                QTextEdit {{
+                    background-color: {THEMES[self.settings.theme]['AI_PANEL_BG']};
+                    color: {THEMES[self.settings.theme]['AI_PANEL_FG']};
+                    border: 1px solid #2d2d30;
+                }}
             """)
-            ai_text.setText(f"Selected text:\n{selected_text}\n\nWaiting for your prompt...")
-            
+
+            ai_text.setHtml(build_html())
+
             def submit_prompt():
-                prompt = ai_prompt.text()
-                if prompt:
-                    ai_text.setText(f"Selected text:\n{selected_text}\n\nPrompt:\n{prompt}\n\nAI response will appear here...")
-                    ai_prompt.clear()
-                    self.statusBar().showMessage("Prompt submitted")
-            
+                prompt = ai_prompt.text().strip()
+                if not prompt:
+                    self.window().statusBar().showMessage("Prompt cannot be empty", 2000)
+                    return
+
+                self.window().statusBar().showMessage("Thinking...", 0)
+                try:
+                    payload = {"text": f"[SELECTED TEXT]:\n```\n{selected_text}\n```\n\n[PROMPT]: {prompt}"}
+
+                    response = requests.post(
+                        "https://gpu-handler.onrender.com/predict",
+                        json=payload
+                    )
+                    response.raise_for_status()
+
+                    result_data = response.json()
+                    result = result_data
+
+                except requests.exceptions.RequestException:
+                    result = f"Failed to connect to online GPU or API error"
+                except Exception:
+                    result = f"An unexpected error occurred"
+
+                ai_text.setHtml(build_html(prompt, result))
+                ai_prompt.clear()
+                self.window().statusBar().showMessage("AI response received", 3000)
+
             ai_prompt.returnPressed.connect(submit_prompt)
-            
+
             ai_layout.addWidget(ai_prompt)
             ai_layout.addWidget(ai_text)
             ai_widget.setLayout(ai_layout)
             self.ai_dock.setWidget(ai_widget)
-            self.addDockWidget(Qt.RightDockWidgetArea, self.ai_dock)
+            self.window().addDockWidget(Qt.RightDockWidgetArea, self.ai_dock)
+
         else:
             ai_text = self.ai_dock.widget().layout().itemAt(1).widget()
-            ai_text.setText(f"Selected text:\n{selected_text}\n\nWaiting for your prompt...")
+            ai_text.setHtml(build_html())
+
             self.ai_dock.show()
-        self.statusBar().showMessage("AI panel opened")
+
+        self.window().statusBar().showMessage("AI panel opened")
+        
+
+
+
+
+
+
+
+class MyMonokai(MonokaiStyle):
+    styles = MonokaiStyle.styles.copy()
+    styles.update({
+        Comment:        '#6A9955',  # green
+        Name.Function:  'bold   #DCCB7A',  # yellow
+        Name.Class:     '#FFFF00',         # yellow
+        Keyword:        'bold #DCAADC',
+        Token:          '#4EC9B0',
+    })
+    background_color = "#000000"  # Set background to black explicitly
+
+import re
+from pygments import highlight
+from pygments.lexers.python import PythonLexer
+from pygments.formatters.html import HtmlFormatter
+
+
+def pygments_highlight(code: str, default_color_css: str) -> str:
+
+    if not code.endswith("\n"):
+        code += "\n"
+    formatter = HtmlFormatter(noclasses=True, style=MyMonokai, nowrap=True)
+    highlighted = highlight(code, PythonLexer(), formatter)
+
+    highlighted = re.sub(r'(</span>)(\s*)(<span class="c">)', r'\1\2\3', highlighted)
+
+    return f'<pre style="{default_color_css}">{highlighted}</pre>'
+
+def process_codeenv(text: str, default_css: str) -> str:
+        out = []
+        cursor = 0
+        for match in re.finditer(r'<CodeEnv>', text):
+            start = match.start()
+            end_tag = re.search(r'</CodeEnv>', text[start:])
+            if end_tag:
+                end = start + end_tag.end()
+                code = text[start + len('<CodeEnv>'): end - len('</CodeEnv>')]
+                out.append(text[cursor:start])  # No escaping yet
+                out.append(pygments_highlight(code, default_css))
+                cursor = end
+            else:
+                out.append(text[cursor:start])
+                code = text[start + len('<CodeEnv>') :]
+                out.append(pygments_highlight(code, default_css))
+                cursor = len(text)
+                break
+        out.append(text[cursor:])
+        processed_text = ''.join(out)
+
+        # Escape everything except <b> tags and highlighted code
+        def escape_except_html(match):
+            return html.escape(match.group(0))
+
+        # First, protect all <b> tags and highlighted code blocks from escaping
+        processed_text = re.sub(r'<(?!/?(b|span|div)).*?>', escape_except_html, processed_text)
+        
+        # Bold formatting for **text** (remove asterisks and apply bold)
+        processed_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', processed_text)
+
+        return processed_text
