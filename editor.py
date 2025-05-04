@@ -32,10 +32,9 @@ from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
 import subprocess
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction, QTabWidget, QSplitter, QDockWidget, QTreeView, QFileSystemModel, QFileDialog, QMessageBox, QCompleter, QFontDialog, QMenu, QTextEdit, QLineEdit, QComboBox, QToolBar, QInputDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction, QTabWidget, QSplitter, QDockWidget, QTreeView, QFileSystemModel, QFileDialog, QMessageBox, QCompleter, QFontDialog, QMenu, QTextEdit, QLineEdit, QComboBox, QToolBar, QInputDialog
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QStandardItemModel, QStandardItem, QKeySequence
-from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
-from PyQt5.QtCore import QSettings
+from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel, QProcess
 from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
@@ -339,18 +338,38 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Terminal shown")
 
     def apply_theme_to_file_explorer(self):
-        self.tree_view.setStyleSheet(f"background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']}; color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};")
         self.tree_view.setStyleSheet(f"""
-            QTreeView {{ background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']}; color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']}; }}
+            QTreeView {{
+                background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']};
+                color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};
+                alternate-background-color: {THEMES[self.settings.theme]['LINE_NUMBER_BG']};
+            }}
             QHeaderView::section {{
-                background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']};  
-                color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};  
+                background-color: {THEMES[self.settings.theme]['LINE_NUMBER_BG']};
+                color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};
                 border: 1px solid #2d2d30;
+            }}
+            QTreeView::item:selected {{
+                background-color: {THEMES[self.settings.theme]['LINE_NUMBER_BG']};
             }}
         """)
 
     def apply_theme_to_tabs(self):
-        self.editor_tabs.setStyleSheet(f"background-color: {THEMES[self.settings.theme]['EDITOR_BACKGROUND']}; color: {THEMES[self.settings.theme]['EDITOR_FOREGROUND']}; border: 1px solid #2d2d30;")
+        self.editor_tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: 1px solid #2d2d30;
+                background-color: {THEMES[self.settings.theme]['EDITOR_BACKGROUND']};
+            }}
+            QTabBar::tab {{
+                background-color: {THEMES[self.settings.theme]['FILE_EXPLORER_BG']};
+                color: {THEMES[self.settings.theme]['FILE_EXPLORER_FG']};
+                padding: 5px;
+                border: 1px solid #2d2d30;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {THEMES[self.settings.theme]['EDITOR_BACKGROUND']};
+            }}
+        """)
 
     def _populate_interpreters(self):
         interpreters = ["python"]
@@ -449,16 +468,26 @@ class MainWindow(QMainWindow):
         if ok:
             self.settings.theme = theme
             self.settings.save_settings()
-            self.apply_theme_to_file_explorer()
+            
+            # Update all theme-dependent parts            self.apply_theme_to_file_explorer()
             self.apply_theme_to_tabs()
+            
             for i in range(self.editor_tabs.count()):
                 editor = self.editor_tabs.widget(i)
                 if isinstance(editor, CodeEditor):
                     editor.theme = theme
                     editor.apply_theme()
+            
             self.terminal.theme = theme
             self.terminal.apply_theme()
-            self.interpreter_combo.setStyleSheet(f"background-color: {THEMES[theme]['AI_PANEL_BG']}; color: {THEMES[theme]['AI_PANEL_FG']}; border: 1px solid #2d2d30; padding: 5px;")
+            
+            self.interpreter_combo.setStyleSheet(f"""
+                background-color: {THEMES[theme]['AI_PANEL_BG']};
+                color: {THEMES[theme]['AI_PANEL_FG']};
+                border: 1px solid #2d2d30;
+                padding: 5px;
+            """)
+
             if self.ai_dock:
                 ai_prompt = self.ai_dock.widget().layout().itemAt(0).widget()
                 ai_text = self.ai_dock.widget().layout().itemAt(1).widget()
@@ -473,7 +502,14 @@ class MainWindow(QMainWindow):
                     color: {THEMES[theme]['AI_PANEL_FG']};
                     border: 1px solid #2d2d30;
                 """)
+
             self.statusBar().showMessage(f"Theme changed to: {theme}")
+
+            # بستن و دوباره باز کردن برنامه
+            from PyQt5.QtCore import QProcess
+            import sys
+            QApplication.quit()
+            QProcess.startDetached(sys.executable, sys.argv)
 
     def _setup_file_explorer(self):
         self.tree_view.setRootIndex(self.file_model.index(QDir.currentPath()))
@@ -719,14 +755,6 @@ class MainWindow(QMainWindow):
             self.ai_dock.show()
 
         self.window().statusBar().showMessage("AI panel opened")
-        
-
-
-
-
-
-
-
 class MyMonokai(MonokaiStyle):
     styles = MonokaiStyle.styles.copy()
     styles.update({
@@ -787,3 +815,15 @@ def process_codeenv(text: str, default_css: str) -> str:
         processed_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', processed_text)
 
         return processed_text
+
+def force_theme_update(self):
+    self.repaint()
+    self.editor_tabs.repaint()
+    self.file_explorer.repaint()
+    self.terminal.repaint()
+    for i in range(self.editor_tabs.count()):
+        editor = self.editor_tabs.widget(i)
+        if isinstance(editor, CodeEditor):
+            editor.repaint()
+    QApplication.processEvents()
+    self.force_theme_update()
