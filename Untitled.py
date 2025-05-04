@@ -1,1 +1,1 @@
-#WRITE YOUR COPY RIGHT HERE
+print("Hello")

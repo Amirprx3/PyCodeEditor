@@ -9,6 +9,7 @@ class TitleBar(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
+        self.setMouseTracking(True)
         self.setFixedHeight(30)
         self.setStyleSheet("background-color: #2d2d30; border: none;")
         

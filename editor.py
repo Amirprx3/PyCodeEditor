@@ -35,6 +35,7 @@ import subprocess
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPlainTextEdit, QAction, QTabWidget, QSplitter, QDockWidget, QTreeView, QFileSystemModel, QFileDialog, QMessageBox, QCompleter, QFontDialog, QMenu, QTextEdit, QLineEdit, QComboBox, QToolBar, QInputDialog
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QStandardItemModel, QStandardItem, QKeySequence
 from PyQt5.QtCore import Qt, QDir, QModelIndex, QRect, QStringListModel
+from PyQt5.QtCore import QSettings
 from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
@@ -247,7 +248,36 @@ class MainWindow(QMainWindow):
         self._setup_status_bar()
         self.ai_dock = None
         self.terminal_visible = True
+    
+    def reset_to_defaults(self):
+        self.settings.settings.clear()  # Clear internal QSettings
+        self.settings.load_settings()  # Reload default settings
 
+        # Apply theme and font updates
+        self.apply_theme_to_file_explorer()
+        self.apply_theme_to_tabs()
+        reply = QMessageBox.question(
+            self,
+            "Reset Settings",
+            "Are you sure you want to reset all settings to defaults?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.settings.settings.clear()
+            self.settings.load_settings()
+            for i in range(self.editor_tabs.count()):
+                editor = self.editor_tabs.widget(i)
+                if isinstance(editor, CodeEditor):
+                    editor.setFont(self.settings.editor_font)
+                    editor.theme = self.settings.theme
+                    editor.apply_theme()
+
+            self.terminal.theme = self.settings.theme
+            self.terminal.apply_theme()
+
+            self.statusBar().showMessage("Settings reset to defaults")
+    
     def _setup_ui(self):
         main_splitter = QSplitter(Qt.Horizontal)
         self.file_explorer = QDockWidget("File Explorer", self)
@@ -389,11 +419,15 @@ class MainWindow(QMainWindow):
         font_settings_action = QAction("Font Settings", self)
         font_settings_action.triggered.connect(self.show_font_settings)
         settings_menu.addAction(font_settings_action)
+        reset_action = QAction("Reset to Defaults", self)
+        reset_action.triggered.connect(self.reset_to_defaults)
+        settings_menu.addAction(reset_action)
 
         theme_settings_action = QAction("Theme Settings", self)
         theme_settings_action.triggered.connect(self.show_theme_settings)
         settings_menu.addAction(theme_settings_action)
 
+    # In main.py's show_font_settings
     def show_font_settings(self):
         current_editor = self.editor_tabs.currentWidget()
         if current_editor is None:
@@ -401,7 +435,6 @@ class MainWindow(QMainWindow):
             font, ok = QFontDialog.getFont(default_font, self, "Choose Font")
         else:
             font, ok = QFontDialog.getFont(current_editor.font(), self, "Choose Font", QFontDialog.DontUseNativeDialog)
-
         if ok:
             for i in range(self.editor_tabs.count()):
                 editor = self.editor_tabs.widget(i)
@@ -410,6 +443,7 @@ class MainWindow(QMainWindow):
             self.settings.editor_font = font
             self.settings.save_settings()
 
+    # In main.py's show_theme_settings
     def show_theme_settings(self):
         theme, ok = QInputDialog.getItem(self, "Choose Theme", "Select a theme:", ["dark", "light"], 0, False)
         if ok:

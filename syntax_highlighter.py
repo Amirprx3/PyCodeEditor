@@ -62,11 +62,11 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
             match_iterator = pattern.globalMatch(text)
             while match_iterator.hasNext():
                 match = match_iterator.next()
-                if style == 'function_name' and match.lastCapturedIndex() > 0:
+                # Use captured group 1 for function/class names
+                if style in ['function_name', 'class'] and match.lastCapturedIndex() > 0:
                     start = match.capturedStart(1)
                     length = match.capturedLength(1)
                 else:
                     start = match.capturedStart()
                     length = match.capturedLength()
-
                 self.setFormat(start, length, self._styles[style])
